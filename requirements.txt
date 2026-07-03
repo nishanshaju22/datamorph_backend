@@ -1,0 +1,34 @@
+# Web framework
+django
+djangorestframework
+django-cors-headers
+
+# Async task queue
+celery
+redis
+django-celery-results
+
+# Database
+dj-database-url
+psycopg2-binary
+
+# Production server
+waitress
+
+# File handling
+python-magic
+pandas
+openpyxl
+pyarrow
+
+# LLM
+langchain
+langchain-huggingface
+langchain-core
+huggingface_hub
+
+# Distributed processing
+pyspark
+
+# Environment
+python-dotenv
