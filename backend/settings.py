@@ -87,7 +87,7 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # CORS: allow React dev server and Docker frontend
 _cors_origins = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:5173, https://assesment-frontend-eight.vercel.app, http://localhost:3000, http://localhost"
+    "http://localhost:5173, https://datamorph-frontend.vercel.app, http://localhost:3000, http://localhost"
 )
 CORS_ALLOWED_ORIGINS  = [o.strip() for o in _cors_origins.split(",")]
 CORS_ALLOW_CREDENTIALS = True
@@ -127,8 +127,8 @@ CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_EXPIRES = 60 * 60 * 24       # 24 hours
 CELERY_TASK_MAX_RETRIES = 3
 CELERY_TASK_DEFAULT_RETRY_DELAY = 5
-CELERY_TASK_SOFT_TIME_LIMIT = 60 * 30      # 30 min — raises exception
-CELERY_TASK_TIME_LIMIT = 60 * 35           # 35 min — kills worker
+CELERY_TASK_SOFT_TIME_LIMIT = 60 * 30      # 30 min
+CELERY_TASK_TIME_LIMIT = 60 * 35           # 35 min
 
 
 # File uploads
