@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import pandas as pd
 from django.conf import settings
 from pyspark.sql import SparkSession
@@ -7,9 +8,34 @@ from pyspark.sql import functions as F
 
 logger = logging.getLogger(__name__)
 
+USE_SPARK = os.environ.get("USE_SPARK", "true").lower() == "true"
+
+
+def run_replacement(
+    file_path: str,
+    mime_type: str,
+    target_columns: list[str],
+    regex_pattern: str,
+    replacement: str,
+    job_id: str,
+    progress_callback,
+) -> str:
+    if USE_SPARK:
+        return _run_with_spark(
+            file_path, mime_type, target_columns,
+            regex_pattern, replacement, job_id, progress_callback
+        )
+    else:
+        return _run_with_pandas(
+            file_path, mime_type, target_columns,
+            regex_pattern, replacement, job_id, progress_callback
+        )
+
 
 def get_spark_session():
-    """Create or retrieve a SparkSession."""
+    """
+    Create or retrieve a SparkSession.
+    """
 
     return (
         SparkSession.builder
@@ -22,57 +48,96 @@ def get_spark_session():
     )
 
 
-def run_replacement(
-    file_path: str,
-    mime_type: str,
-    target_columns: list[str],
-    regex_pattern: str,
-    replacement: str,
-    job_id: str,
-    progress_callback,
-) -> str:
-    """Spark transformation."""
+def _run_with_spark(
+    file_path, mime_type, target_columns,
+    regex_pattern, replacement, job_id, progress_callback
+):
 
     spark = get_spark_session()
     progress_callback(10)
 
-    # Read 
     df = _read_file(spark, file_path, mime_type)
     progress_callback(30)
 
-    # Repartition for parallelism
+    # Repartition for parallelism across all cores
     num_partitions = (os.cpu_count() or 4) * 2
     df = df.repartition(num_partitions)
 
-    # Transform
-    # Apply regexp_replace to each target column
-    for col in target_columns:
-        if col in df.columns:
+    logger.info(f"[spark] columns={df.columns} targets={target_columns} pattern={regex_pattern!r}")
+
+    for col_name in target_columns:
+        if col_name in df.columns:
+            # Capture all three values explicitly in local scope
+            _col = col_name
+            _pattern = regex_pattern
+            _replace = replacement
+
+            before_count = df.filter(
+                F.regexp_replace(F.col(_col).cast("string"), _pattern, _replace) != F.col(_col).cast("string")
+            ).count()
+            logger.info(f"[spark] '{_col}': {before_count} rows will be affected")
+
             df = df.withColumn(
-                col,
-                F.regexp_replace(F.col(col).cast("string"), regex_pattern, replacement)
+                _col,
+                F.regexp_replace(F.col(_col).cast("string"), _pattern, _replace)
             )
         else:
-            logger.warning(f"Column '{col}' not found in DataFrame, skipping.")
+            logger.warning(f"[spark] column '{col_name}' not found in {df.columns}")
 
     progress_callback(70)
 
-    # Write
     output_path = _write_result(df, job_id)
     progress_callback(90)
 
     spark.catalog.clearCache()
+    return output_path
 
+# Pandas engine — fallback
+def _run_with_pandas(
+    file_path, mime_type, target_columns,
+    regex_pattern, replacement, job_id, progress_callback
+):
+    progress_callback(10)
+
+    if mime_type in (
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ):
+        df = pd.read_excel(file_path)
+    else:
+        df = pd.read_csv(file_path, dtype=str)
+
+    progress_callback(30)
+
+    logger.info(f"[pandas] columns={list(df.columns)} targets={target_columns} pattern={regex_pattern!r}")
+
+    compiled = re.compile(regex_pattern)
+
+    for col_name in target_columns:
+        if col_name in df.columns:
+            before = df[col_name].tolist()
+            # Capture values by default arg to avoid closure scoping bug
+            df[col_name] = df[col_name].astype(str).apply(
+                lambda val, c=compiled, r=replacement: re.sub(c, r, val)
+            )
+            logger.info(f"[pandas] '{col_name}' before={before} after={df[col_name].tolist()}")
+        else:
+            logger.warning(f"[pandas] column '{col_name}' not found")
+
+    progress_callback(70)
+
+    output_path = _write_parquet_pandas(df, job_id)
+    progress_callback(90)
     return output_path
 
 
+# File readers
 def _read_file(spark, file_path: str, mime_type: str):
     """Read CSV or Excel into a Spark DataFrame."""
     if mime_type in (
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ):
-        # convert via pandas 
         pdf = pd.read_excel(file_path)
         return spark.createDataFrame(pdf)
     else:
@@ -86,9 +151,10 @@ def _read_file(spark, file_path: str, mime_type: str):
         )
 
 
+# Writers
 def _write_result(df, job_id: str) -> str:
     """
-    Write the result DataFrame to Parquet.
+    Write Spark DataFrame to Parquet.
     """
     os.makedirs(settings.RESULTS_DIR, exist_ok=True)
     output_path = os.path.join(settings.RESULTS_DIR, job_id)
@@ -100,4 +166,12 @@ def _write_result(df, job_id: str) -> str:
         .parquet(output_path)
     )
 
+    return output_path
+
+def _write_parquet_pandas(df, job_id: str) -> str:
+    """Write pandas DataFrame to Parquet."""
+    os.makedirs(settings.RESULTS_DIR, exist_ok=True)
+    output_path = os.path.join(settings.RESULTS_DIR, job_id)
+    os.makedirs(output_path, exist_ok=True)
+    df.to_parquet(os.path.join(output_path, "result.parquet"), index=False)
     return output_path
