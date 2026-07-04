@@ -1,5 +1,4 @@
 import os
-import shutil
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -18,10 +17,14 @@ class UploadListCreateView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        uploads = Upload.objects.all().order_by('-created_at')
+        """Return all uploads belonging to this session."""
+        self._ensure_session(request)
+        uploads = Upload.objects.filter(session_key=request.session.session_key)
         return Response(UploadSerializer(uploads, many=True).data)
 
     def post(self, request):
+        self._ensure_session(request)
+
         # Validate incoming request
         create_serializer = UploadCreateSerializer(data=request.data)
         create_serializer.is_valid(raise_exception=True)
@@ -35,7 +38,7 @@ class UploadListCreateView(APIView):
 
         # Create database record
         upload = Upload.objects.create(
-            session_key = "annoymous",
+            session_key = request.session.session_key,
             original_name = file.name,
             file_path = file_path,
             file_size = file.size,
@@ -56,11 +59,9 @@ class UploadListCreateView(APIView):
             status=status.HTTP_201_CREATED
         )
 
-    def _get_owned_upload(self, request, pk):
-        try:
-            return Upload.objects.get(pk=pk)
-        except Upload.DoesNotExist:
-            raise NotFound("Upload not found.")
+    def _ensure_session(self, request):
+        if not request.session.session_key:
+            request.session.create()
 
 
 class UploadDetailView(APIView):
@@ -79,6 +80,7 @@ class UploadDetailView(APIView):
             "EXISTS:",
             Upload.objects.filter(
                 pk=pk,
+                session_key=request.session.session_key,
             ).exists()
         )
 
@@ -90,12 +92,14 @@ class UploadDetailView(APIView):
                 AsyncResult(job.celery_task_id).revoke(terminate=True)
 
         # Delete file from disk
+        import os
         if os.path.exists(upload.file_path):
             os.remove(upload.file_path)
 
         # Delete result files
         for job in upload.jobs.all():
             if job.result_path and os.path.exists(job.result_path):
+                import shutil
                 shutil.rmtree(job.result_path, ignore_errors=True)
 
         # Delete DB record
@@ -104,16 +108,44 @@ class UploadDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _get_owned_upload(self, request, pk):
+        self._ensure_session(request)
+
+        print("========== GET DEBUG ==========")
+        print("REQUEST SESSION:", request.session.session_key)
+        print("REQUEST COOKIES:", request.COOKIES)
+        print("PK:", pk)
+
+        print(
+            "UPLOADS WITH THIS PK:",
+            list(
+                Upload.objects.filter(pk=pk).values(
+                    "id",
+                    "session_key",
+                    "status",
+                )
+            ),
+        )
+
+        print(
+            "MATCHES:",
+            Upload.objects.filter(
+                pk=pk,
+                session_key=request.session.session_key,
+            ).count(),
+        )
+
         try:
-            print(
-                "UPLOAD IN DB:",
-                Upload.objects.filter(pk=pk).values("id", "session_key")
-            )
             return Upload.objects.get(
                 pk=pk,
+                session_key=request.session.session_key,
             )
         except Upload.DoesNotExist:
+            print("NOT FOUND")
             raise NotFound("Upload not found.")
+
+    def _ensure_session(self, request):
+        if not request.session.session_key:
+            request.session.create()
 
 
 class UploadPreviewView(APIView):

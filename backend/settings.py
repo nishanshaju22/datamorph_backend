@@ -89,17 +89,30 @@ TEMPLATES = [
 WSGI_APPLICATION = "backend.wsgi.application"
 
 # CORS
-_cors_origins = os.environ.get(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://localhost"
-)
-CORS_ALLOWED_ORIGINS   = [o.strip() for o in _cors_origins.split(",")]
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGINS = [
+    "https://datamorph-frontend.vercel.app",
+    "http://localhost:5173",
+]
+
+CORS_EXPOSE_HEADERS = ["Content-Type", "X-CSRFToken"]
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 
 # Sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_SAMESITE = "None" 
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "True"
+SESSION_COOKIE_SECURE = "True"
 
 # Redis
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
