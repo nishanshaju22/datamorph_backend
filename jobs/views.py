@@ -15,10 +15,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 class JobListCreateView(APIView):
 
     def get(self, request):
-        self._ensure_session(request)
-        jobs = Job.objects.filter(
-            session_key=request.session.session_key
-        ).select_related('upload').order_by('-created_at')
+        jobs = Job.objects.select_related('upload').order_by('-created_at')
         return Response(JobSerializer(jobs, many=True).data)
 
     def post(self, request):
@@ -95,9 +92,11 @@ class JobListCreateView(APIView):
         jobs.delete()
         return Response({"detail": "All jobs deleted."}, status=status.HTTP_200_OK)
 
-    def _ensure_session(self, request):
-        if not request.session.session_key:
-            request.session.create()
+    def _get_owned_job(self, request, pk):
+        try:
+            return Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFound("Job not found.")
 
 
 class JobDetailView(APIView):
