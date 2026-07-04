@@ -99,7 +99,7 @@ CORS_ALLOW_CREDENTIALS = True
 # Sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_SAMESITE = "None" 
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "False").lower() == "true"
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "True"
 
 # Redis
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

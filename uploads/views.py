@@ -45,6 +45,11 @@ class UploadListCreateView(APIView):
             mime_type = mime_type,
             status = Upload.Status.PENDING,
         )
+        
+        
+        print("UPLOAD SESSION:", request.session.session_key)
+        print("UPLOAD ID:", upload.id)
+        print("UPLOAD DB SESSION:", upload.session_key)
 
         # Dispatch background task to inspect the file
         inspect_upload_task.apply_async(args=[str(upload.id)], countdown=2)
@@ -67,6 +72,18 @@ class UploadDetailView(APIView):
     
     def delete(self, request, pk):
         upload = self._get_owned_upload(request, pk)
+        
+        print("GET SESSION:", request.session.session_key)
+        print("LOOKING FOR:", pk)
+
+        print(
+            "EXISTS:",
+            Upload.objects.filter(
+                pk=pk,
+                session_key=request.session.session_key,
+            ).exists()
+        )
+
 
         # Cancel any running jobs first
         for job in upload.jobs.filter(status__in=["QUEUED", "RUNNING"]):
@@ -93,6 +110,10 @@ class UploadDetailView(APIView):
     def _get_owned_upload(self, request, pk):
         self._ensure_session(request)
         try:
+            print(
+                "UPLOAD IN DB:",
+                Upload.objects.filter(pk=pk).values("id", "session_key")
+            )
             return Upload.objects.get(
                 pk=pk,
                 session_key=request.session.session_key
