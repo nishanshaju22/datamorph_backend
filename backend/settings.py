@@ -17,15 +17,17 @@ DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
 
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-# Database: SQLite locally, PostgreSQL in Docker
+# Database — SQLite locally, PostgreSQL in production
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 if DATABASE_URL:
+    ssl_required = "neon.tech" in DATABASE_URL
+
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
             conn_max_age=600,
-            ssl_require=True,
+            ssl_require=ssl_required,
         )
     }
 else:
@@ -35,6 +37,8 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 # Installed apps
 INSTALLED_APPS = [
@@ -84,19 +88,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-# CORS: allow React dev server and Docker frontend
+# CORS
 _cors_origins = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:5173, https://datamorph-frontend.vercel.app, http://localhost:3000, http://localhost"
+    "http://localhost:5173,http://localhost:3000,http://localhost"
 )
-CORS_ALLOWED_ORIGINS  = [o.strip() for o in _cors_origins.split(",")]
+CORS_ALLOWED_ORIGINS   = [o.strip() for o in _cors_origins.split(",")]
 CORS_ALLOW_CREDENTIALS = True
 
 # Sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
-SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SAMESITE = "None" 
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "False").lower() == "true"
-
 
 # Redis
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -105,42 +108,41 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": REDIS_URL,
-        "TIMEOUT": 60 * 60 * 24,   # 24 hours default
+        "TIMEOUT": 60 * 60 * 24,
         "KEY_PREFIX": "datamorph",
     }
 }
 
 LLM_CACHE_TIMEOUT = 60 * 60 * 24 * 7   # 7 days
 
+# Only add SSL config for Upstash (rediss://) not Railway internal Redis (redis://)
 if REDIS_URL.startswith("rediss://"):
     CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": "none"}
-    CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": "none"}
+    CELERY_REDIS_BACKEND_USE_SSL  = {"ssl_cert_reqs": "none"}
 
 # Celery
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-CELERY_RESULT_EXTENDED = True
-CELERY_RESULT_EXPIRES = 60 * 60 * 24       # 24 hours
-CELERY_TASK_MAX_RETRIES = 3
+CELERY_BROKER_URL            = REDIS_URL
+CELERY_RESULT_BACKEND        = REDIS_URL
+CELERY_ACCEPT_CONTENT        = ["json"]
+CELERY_TASK_SERIALIZER       = "json"
+CELERY_RESULT_SERIALIZER     = "json"
+CELERY_TIMEZONE              = "UTC"
+CELERY_RESULT_EXTENDED       = True
+CELERY_RESULT_EXPIRES        = 60 * 60 * 24
+CELERY_TASK_MAX_RETRIES      = 3
 CELERY_TASK_DEFAULT_RETRY_DELAY = 5
-CELERY_TASK_SOFT_TIME_LIMIT = 60 * 30      # 30 min
-CELERY_TASK_TIME_LIMIT = 60 * 35           # 35 min
-
+CELERY_TASK_SOFT_TIME_LIMIT  = 60 * 30
+CELERY_TASK_TIME_LIMIT       = 60 * 35
 
 # File uploads
-MEDIA_ROOT = os.environ.get("MEDIA_ROOT", os.path.join(BASE_DIR, "media"))
-UPLOAD_DIR = os.path.join(MEDIA_ROOT, "uploads")
+MEDIA_ROOT  = os.environ.get("MEDIA_ROOT", os.path.join(BASE_DIR, "media"))
+UPLOAD_DIR  = os.path.join(MEDIA_ROOT, "uploads")
 RESULTS_DIR = os.path.join(MEDIA_ROOT, "results")
 
-DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024   # 500 MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024
 
 ALLOWED_UPLOAD_EXTENSIONS = [".csv", ".xlsx", ".xls"]
-
 
 # LLM
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
@@ -158,6 +160,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Internationalisation
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
