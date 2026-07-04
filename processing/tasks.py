@@ -36,8 +36,9 @@ def inspect_upload_task(self, upload_id: str):
 
         logger.info(f"Upload {upload_id} inspected: {row_count} rows, {len(column_meta)} columns")
 
-        print("CELERY FILE PATH:", upload.file_path)
-        print("FILE EXISTS:", os.path.exists(upload.file_path))
+        print("CELERY CHECK PATH:", upload.file_path)
+        print("CELERY EXISTS:", os.path.exists(upload.file_path))
+        print("UPLOAD DIR LIST:", os.listdir("/app/media/uploads"))
         
     except Upload.DoesNotExist:
         logger.error(f"Upload {upload_id} not found, skipping inspection")

@@ -49,10 +49,6 @@ class UploadListCreateView(APIView):
         # Dispatch background task to inspect the file
         inspect_upload_task.delay(str(upload.id))
         
-        print("UPLOAD DIR:", settings.UPLOAD_DIR)
-        print("ABS PATH:", os.path.abspath(settings.UPLOAD_DIR))
-        print("EXISTS:", os.path.exists(settings.UPLOAD_DIR))
-
         return Response(
             UploadSerializer(upload).data,
             status=status.HTTP_201_CREATED
