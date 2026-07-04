@@ -4,26 +4,27 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
-
+from celery.result import AsyncResult
 from .models import Upload
 from .serializers import UploadSerializer, UploadCreateSerializer
 from .validators import validate_upload_file
 from .storage import save_upload_to_disk
 from rest_framework.exceptions import NotFound
 from processing.tasks import inspect_upload_task
+from backend.core_utils import get_client_id
 
 
 class UploadListCreateView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        """Return all uploads belonging to this session."""
-        self._ensure_session(request)
-        uploads = Upload.objects.filter(session_key=request.session.session_key)
+        """Return all uploads belonging to this client."""
+        client_id = get_client_id(request)
+        uploads = Upload.objects.filter(session_key=client_id)
         return Response(UploadSerializer(uploads, many=True).data)
 
     def post(self, request):
-        self._ensure_session(request)
+        client_id = get_client_id(request)
 
         # Validate incoming request
         create_serializer = UploadCreateSerializer(data=request.data)
@@ -38,30 +39,21 @@ class UploadListCreateView(APIView):
 
         # Create database record
         upload = Upload.objects.create(
-            session_key = request.session.session_key,
+            session_key = client_id,
             original_name = file.name,
             file_path = file_path,
             file_size = file.size,
             mime_type = mime_type,
             status = Upload.Status.PENDING,
         )
-        
-        
-        print("UPLOAD SESSION:", request.session.session_key)
-        print("UPLOAD ID:", upload.id)
-        print("UPLOAD DB SESSION:", upload.session_key)
 
         # Dispatch background task to inspect the file
         inspect_upload_task.apply_async(args=[str(upload.id)], countdown=2)
-        
+
         return Response(
             UploadSerializer(upload).data,
             status=status.HTTP_201_CREATED
         )
-
-    def _ensure_session(self, request):
-        if not request.session.session_key:
-            request.session.create()
 
 
 class UploadDetailView(APIView):
@@ -69,30 +61,16 @@ class UploadDetailView(APIView):
     def get(self, request, pk):
         upload = self._get_owned_upload(request, pk)
         return Response(UploadSerializer(upload).data)
-    
+
     def delete(self, request, pk):
         upload = self._get_owned_upload(request, pk)
-        
-        print("GET SESSION:", request.session.session_key)
-        print("LOOKING FOR:", pk)
-
-        print(
-            "EXISTS:",
-            Upload.objects.filter(
-                pk=pk,
-                session_key=request.session.session_key,
-            ).exists()
-        )
-
 
         # Cancel any running jobs first
         for job in upload.jobs.filter(status__in=["QUEUED", "RUNNING"]):
             if job.celery_task_id:
-                from celery.result import AsyncResult
                 AsyncResult(job.celery_task_id).revoke(terminate=True)
 
         # Delete file from disk
-        import os
         if os.path.exists(upload.file_path):
             os.remove(upload.file_path)
 
@@ -108,47 +86,11 @@ class UploadDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _get_owned_upload(self, request, pk):
-        self._ensure_session(request)
-
-        print("========== GET DEBUG ==========")
-        print("REQUEST SESSION:", request.session.session_key)
-        print("REQUEST COOKIES:", request.COOKIES)
-        print("PK:", pk)
-
-        print(
-            "UPLOADS WITH THIS PK:",
-            list(
-                Upload.objects.filter(pk=pk).values(
-                    "id",
-                    "session_key",
-                    "status",
-                )
-            ),
-        )
-
-        print(
-            "MATCHES:",
-            Upload.objects.filter(
-                pk=pk,
-                session_key=request.session.session_key,
-            ).count(),
-        )
-
+        client_id = get_client_id(request)
         try:
             return Upload.objects.get(
                 pk=pk,
-                session_key=request.session.session_key,
+                session_key=client_id,
             )
         except Upload.DoesNotExist:
-            print("NOT FOUND")
             raise NotFound("Upload not found.")
-
-    def _ensure_session(self, request):
-        if not request.session.session_key:
-            request.session.create()
-
-
-class UploadPreviewView(APIView):
-
-    def get(self, request, pk):
-        return Response({"detail": "not implemented yet"}, status=status.HTTP_200_OK)

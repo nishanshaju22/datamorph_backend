@@ -10,14 +10,15 @@ from processing.tasks import run_job_task
 from rest_framework.response import Response
 from .serializers import JobSerializer, JobCreateSerializer
 from rest_framework.exceptions import NotFound, ValidationError
+from backend.core_utils import get_client_id
 
 
 class JobListCreateView(APIView):
 
     def get(self, request):
-        self._ensure_session(request)
+        client_id = get_client_id(request)
         jobs = Job.objects.filter(
-            session_key=request.session.session_key
+            session_key=client_id
         ).select_related('upload').order_by('-created_at')
         return Response(JobSerializer(jobs, many=True).data)
 
@@ -26,22 +27,22 @@ class JobListCreateView(APIView):
         Create a job and dispatch it to Celery immediately.
         Returns the job_id.
         """
-        self._ensure_session(request)
+        client_id = get_client_id(request)
 
         serializer = JobCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        # Verify the upload to this session
+        # Verify the upload belongs to this client
         try:
             upload = Upload.objects.get(
                 pk=data["upload_id"],
-                session_key=request.session.session_key,
+                session_key=client_id,
             )
         except Upload.DoesNotExist:
             raise NotFound("Upload not found.")
 
-        # chcek if upload is in ready state
+        # check if upload is in ready state
         if upload.status != Upload.Status.READY:
             raise ValidationError(
                 f"Upload is not ready yet (status: {upload.status}). "
@@ -62,7 +63,7 @@ class JobListCreateView(APIView):
 
         # Create job record
         job = Job.objects.create(
-            session_key = request.session.session_key,
+            session_key = client_id,
             upload = upload,
             nl_prompt = data["nl_prompt"],
             target_columns = data["target_columns"],
@@ -74,16 +75,15 @@ class JobListCreateView(APIView):
         run_job_task.delay(str(job.id))
 
         return Response(JobSerializer(job).data, status=status.HTTP_201_CREATED)
-    
-    def delete(self, request):
-        self._ensure_session(request)
 
-        jobs = Job.objects.filter(session_key=request.session.session_key)
+    def delete(self, request):
+        client_id = get_client_id(request)
+
+        jobs = Job.objects.filter(session_key=client_id)
 
         # Revoke any running tasks
         for job in jobs.filter(status__in=["QUEUED", "RUNNING"]):
             if job.celery_task_id:
-                from celery.result import AsyncResult
                 AsyncResult(job.celery_task_id).revoke(terminate=True)
 
         # Clean up result files
@@ -94,10 +94,6 @@ class JobListCreateView(APIView):
 
         jobs.delete()
         return Response({"detail": "All jobs deleted."}, status=status.HTTP_200_OK)
-
-    def _ensure_session(self, request):
-        if not request.session.session_key:
-            request.session.create()
 
 
 class JobDetailView(APIView):
@@ -124,12 +120,11 @@ class JobDetailView(APIView):
         return Response({"detail": "Job cancelled."}, status=status.HTTP_200_OK)
 
     def _get_owned_job(self, request, pk):
-        if not request.session.session_key:
-            request.session.create()
+        client_id = get_client_id(request)
         try:
             return Job.objects.get(
                 pk=pk,
-                session_key=request.session.session_key,
+                session_key=client_id,
             )
         except Job.DoesNotExist:
             raise NotFound("Job not found.")
@@ -171,12 +166,11 @@ class JobResultView(APIView):
         })
 
     def _get_owned_job(self, request, pk):
-        if not request.session.session_key:
-            request.session.create()
+        client_id = get_client_id(request)
         try:
             return Job.objects.get(
                 pk=pk,
-                session_key=request.session.session_key,
+                session_key=client_id,
             )
         except Job.DoesNotExist:
             raise NotFound("Job not found.")
@@ -186,7 +180,7 @@ def _read_parquet_page(result_path: str, page: int, page_size: int):
     """
     Read a page of rows from the Parquet result.
     """
-    
+
     parquet_file = None
     for fname in os.listdir(result_path):
         if fname.endswith(".parquet"):
