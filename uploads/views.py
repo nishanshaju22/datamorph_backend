@@ -35,7 +35,7 @@ class UploadListCreateView(APIView):
 
         # Create database record
         upload = Upload.objects.create(
-            session_key = "annoymous"
+            session_key = "annoymous",
             original_name = file.name,
             file_path = file_path,
             file_size = file.size,
