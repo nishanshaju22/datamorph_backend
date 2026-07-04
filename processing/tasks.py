@@ -1,4 +1,5 @@
 import logging
+import os
 import pandas as pd
 from celery import shared_task
 from django.core.cache import cache
@@ -35,6 +36,9 @@ def inspect_upload_task(self, upload_id: str):
 
         logger.info(f"Upload {upload_id} inspected: {row_count} rows, {len(column_meta)} columns")
 
+        print("CELERY FILE PATH:", upload.file_path)
+        print("FILE EXISTS:", os.path.exists(upload.file_path))
+        
     except Upload.DoesNotExist:
         logger.error(f"Upload {upload_id} not found, skipping inspection")
 
