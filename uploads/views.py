@@ -109,16 +109,38 @@ class UploadDetailView(APIView):
 
     def _get_owned_upload(self, request, pk):
         self._ensure_session(request)
+
+        print("========== GET DEBUG ==========")
+        print("REQUEST SESSION:", request.session.session_key)
+        print("REQUEST COOKIES:", request.COOKIES)
+        print("PK:", pk)
+
+        print(
+            "UPLOADS WITH THIS PK:",
+            list(
+                Upload.objects.filter(pk=pk).values(
+                    "id",
+                    "session_key",
+                    "status",
+                )
+            ),
+        )
+
+        print(
+            "MATCHES:",
+            Upload.objects.filter(
+                pk=pk,
+                session_key=request.session.session_key,
+            ).count(),
+        )
+
         try:
-            print(
-                "UPLOAD IN DB:",
-                Upload.objects.filter(pk=pk).values("id", "session_key")
-            )
             return Upload.objects.get(
                 pk=pk,
-                session_key=request.session.session_key
+                session_key=request.session.session_key,
             )
         except Upload.DoesNotExist:
+            print("NOT FOUND")
             raise NotFound("Upload not found.")
 
     def _ensure_session(self, request):
