@@ -47,7 +47,7 @@ class UploadListCreateView(APIView):
         )
 
         # Dispatch background task to inspect the file
-        inspect_upload_task.delay(str(upload.id))
+        inspect_upload_task.apply_async(args=[str(upload.id)], countdown=2)
         
         return Response(
             UploadSerializer(upload).data,

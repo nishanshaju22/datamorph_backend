@@ -23,6 +23,7 @@ def inspect_upload_task(self, upload_id: str):
 
     try:
         upload = Upload.objects.get(pk=upload_id)
+        print("CELERY CHECK PATH:", upload.file_path)
         upload.status = Upload.Status.PENDING
         upload.save(update_fields=["status", "updated_at"])
 
@@ -36,7 +37,6 @@ def inspect_upload_task(self, upload_id: str):
 
         logger.info(f"Upload {upload_id} inspected: {row_count} rows, {len(column_meta)} columns")
 
-        print("CELERY CHECK PATH:", upload.file_path)
         print("CELERY EXISTS:", os.path.exists(upload.file_path))
         print("UPLOAD DIR LIST:", os.listdir("/app/media/uploads"))
         
