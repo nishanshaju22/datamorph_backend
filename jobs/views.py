@@ -59,7 +59,7 @@ class JobListCreateView(APIView):
 
         # Create job record
         job = Job.objects.create(
-            session_key = request.session.session_key,
+            session_key = "annonymous",
             upload = upload,
             nl_prompt = data["nl_prompt"],
             target_columns = data["target_columns"],

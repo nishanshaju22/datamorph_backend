@@ -35,7 +35,7 @@ class UploadListCreateView(APIView):
 
         # Create database record
         upload = Upload.objects.create(
-            session_key = request.session.session_key,
+            session_key = "annoymous"
             original_name = file.name,
             file_path = file_path,
             file_size = file.size,
@@ -90,7 +90,6 @@ class UploadDetailView(APIView):
                 AsyncResult(job.celery_task_id).revoke(terminate=True)
 
         # Delete file from disk
-        import os
         if os.path.exists(upload.file_path):
             os.remove(upload.file_path)
 
