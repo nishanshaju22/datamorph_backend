@@ -1,14 +1,10 @@
 import re
 import hashlib
-import logging
-
 from django.conf import settings
 from django.core.cache import cache
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_core.messages import HumanMessage, SystemMessage
 from huggingface_hub import InferenceClient
-
-logger = logging.getLogger(__name__)
 
 # Prompt
 SYSTEM_PROMPT = """You are a deterministic regex compiler for data transformation in CSV/Excel pipelines.
@@ -206,11 +202,9 @@ def generate_regex(prompt: str) -> str:
     # Cache hit
     cached = cache.get(cache_key)
     if cached:
-        logger.info(f"Regex cache hit for prompt: '{prompt[:50]}'")
         return cached
 
     # Call LLM
-    logger.info(f"Calling HuggingFace for prompt: '{prompt[:50]}'")
     pattern = _call_llm(prompt)
 
     # Validate
@@ -218,7 +212,6 @@ def generate_regex(prompt: str) -> str:
 
     # Cache for configured timeout
     cache.set(cache_key, pattern, timeout=settings.LLM_CACHE_TIMEOUT)
-    logger.info(f"Cached regex for prompt: '{prompt[:50]}' → {pattern}")
 
     return pattern
 
@@ -228,8 +221,6 @@ def _call_llm(prompt: str) -> str:
     client = InferenceClient(
         api_key=settings.HUGGINGFACE_API_KEY,
     )
-    
-    print(settings.MODEL)
     
     response = client.chat.completions.create(
         model=settings.MODEL,
