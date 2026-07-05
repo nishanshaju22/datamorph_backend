@@ -1,12 +1,9 @@
 import os
-import logging
 import re
 import pandas as pd
 from django.conf import settings
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-
-logger = logging.getLogger(__name__)
 
 USE_SPARK = os.environ.get("USE_SPARK", "true").lower() == "true"
 
@@ -63,8 +60,6 @@ def _run_with_spark(
     num_partitions = (os.cpu_count() or 4) * 2
     df = df.repartition(num_partitions)
 
-    logger.info(f"[spark] columns={df.columns} targets={target_columns} pattern={regex_pattern!r}")
-
     for col_name in target_columns:
         if col_name in df.columns:
             # Capture all three values explicitly in local scope
@@ -72,17 +67,10 @@ def _run_with_spark(
             _pattern = regex_pattern
             _replace = replacement
 
-            before_count = df.filter(
-                F.regexp_replace(F.col(_col).cast("string"), _pattern, _replace) != F.col(_col).cast("string")
-            ).count()
-            logger.info(f"[spark] '{_col}': {before_count} rows will be affected")
-
             df = df.withColumn(
                 _col,
                 F.regexp_replace(F.col(_col).cast("string"), _pattern, _replace)
             )
-        else:
-            logger.warning(f"[spark] column '{col_name}' not found in {df.columns}")
 
     progress_callback(70)
 
@@ -109,20 +97,14 @@ def _run_with_pandas(
 
     progress_callback(30)
 
-    logger.info(f"[pandas] columns={list(df.columns)} targets={target_columns} pattern={regex_pattern!r}")
-
     compiled = re.compile(regex_pattern)
 
     for col_name in target_columns:
         if col_name in df.columns:
-            before = df[col_name].tolist()
             # Capture values by default arg to avoid closure scoping bug
             df[col_name] = df[col_name].astype(str).apply(
                 lambda val, c=compiled, r=replacement: re.sub(c, r, val)
             )
-            logger.info(f"[pandas] '{col_name}' before={before} after={df[col_name].tolist()}")
-        else:
-            logger.warning(f"[pandas] column '{col_name}' not found")
 
     progress_callback(70)
 

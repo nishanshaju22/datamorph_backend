@@ -1,5 +1,3 @@
-import logging
-import os
 import pandas as pd
 from celery import shared_task
 from django.core.cache import cache
@@ -7,8 +5,6 @@ from uploads.models import Upload
 from jobs.models import Job
 from processing.spark import run_replacement
 from processing.llm import generate_regex
-
-logger = logging.getLogger(__name__)
 
 @shared_task(
     bind=True,
@@ -23,7 +19,6 @@ def inspect_upload_task(self, upload_id: str):
 
     try:
         upload = Upload.objects.get(pk=upload_id)
-        print("CELERY CHECK PATH:", upload.file_path)
         upload.status = Upload.Status.PENDING
         upload.save(update_fields=["status", "updated_at"])
 
@@ -34,17 +29,7 @@ def inspect_upload_task(self, upload_id: str):
         upload.row_count = row_count
         upload.status = Upload.Status.READY
         upload.save(update_fields=["column_meta", "row_count", "status", "updated_at"])
-
-        logger.info(f"Upload {upload_id} inspected: {row_count} rows, {len(column_meta)} columns")
-
-        print("CELERY EXISTS:", os.path.exists(upload.file_path))
-        print("UPLOAD DIR LIST:", os.listdir("/app/media/uploads"))
-        
-    except Upload.DoesNotExist:
-        logger.error(f"Upload {upload_id} not found, skipping inspection")
-
     except Exception as exc:
-        logger.exception(f"Failed to inspect upload {upload_id}: {exc}")
         raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5)
 
 
@@ -82,7 +67,6 @@ def run_job_task(self, job_id: str):
     try:
         job = Job.objects.get(pk=job_id)
     except Job.DoesNotExist:
-        logger.error(f"Job {job_id} not found")
         return
 
     try:
@@ -91,16 +75,12 @@ def run_job_task(self, job_id: str):
         job.update_progress(5)
 
         # Generate regex
-        logger.info(f"Job {job_id}: generating regex for '{job.nl_prompt[:50]}'")
         regex_pattern = generate_regex(job.nl_prompt)
         job.regex_pattern = regex_pattern
         job.save(update_fields=["regex_pattern", "updated_at"])
         job.update_progress(20)
-        logger.info(f"Job {job_id}: regex = {regex_pattern}")
 
         # Spark replacement
-        logger.info(f"Job {job_id}: starting Spark replacement")
-
         def progress_callback(pct: int):
             mapped = 20 + int(pct * 0.7)
             job.update_progress(mapped)
@@ -120,9 +100,7 @@ def run_job_task(self, job_id: str):
             result_path = result_path,
             regex_pattern = regex_pattern,
         )
-        logger.info(f"Job {job_id}: completed successfully → {result_path}")
 
     except Exception as exc:
-        logger.exception(f"Job {job_id} failed: {exc}")
         job.mark_failed(error=str(exc))
         raise
